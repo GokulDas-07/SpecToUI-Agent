@@ -2,10 +2,50 @@
 
 import { CodeExport } from "@/components/CodeExport";
 import { ComponentPreview } from "@/components/ComponentPreview";
+import { PanelResizeHandle } from "@/components/PanelResizeHandle";
 import { PrdEditor } from "@/components/PrdEditor";
 import { useGenerate } from "@/hooks/useGenerate";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+
+const SPLITTER_GAP_PX = 16;
+const MIN_PRD_WIDTH = 220;
+const MIN_CODE_WIDTH = 280;
+const MIN_CENTER_WIDTH = 260;
+const DEFAULT_PRD_WIDTH = 320;
+const DEFAULT_CODE_WIDTH = 384;
+
+function subscribeMdMedia(cb: () => void) {
+  const mq = window.matchMedia("(min-width: 768px)");
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+}
+
+function getMdMediaMatches() {
+  return window.matchMedia("(min-width: 768px)").matches;
+}
+
+function clampPanelWidths(
+  containerWidth: number,
+  prd: number,
+  code: number,
+): { prd: number; code: number } {
+  let p = prd;
+  let c = code;
+  for (let i = 0; i < 6; i++) {
+    const maxP = containerWidth - MIN_CENTER_WIDTH - c - SPLITTER_GAP_PX;
+    p = Math.min(Math.max(MIN_PRD_WIDTH, p), Math.max(MIN_PRD_WIDTH, maxP));
+    const maxC = containerWidth - MIN_CENTER_WIDTH - p - SPLITTER_GAP_PX;
+    c = Math.min(Math.max(MIN_CODE_WIDTH, c), Math.max(MIN_CODE_WIDTH, maxC));
+  }
+  return { prd: p, code: c };
+}
 
 function SunIcon() {
   return (
@@ -51,6 +91,35 @@ export default function Home() {
     string | null
   >(null);
   const errorAutoDismissRef = useRef<number | null>(null);
+  const mainRowRef = useRef<HTMLDivElement>(null);
+  const prdWidthRef = useRef(DEFAULT_PRD_WIDTH);
+  const codeWidthRef = useRef(DEFAULT_CODE_WIDTH);
+
+  const [prdPanelWidth, setPrdPanelWidth] = useState(DEFAULT_PRD_WIDTH);
+  const [codePanelWidth, setCodePanelWidth] = useState(DEFAULT_CODE_WIDTH);
+  const [panelDrag, setPanelDrag] = useState<
+    | null
+    | {
+        kind: "prd" | "code";
+        startX: number;
+        startPrd: number;
+        startCode: number;
+      }
+  >(null);
+
+  const isDesktopLayout = useSyncExternalStore(
+    subscribeMdMedia,
+    getMdMediaMatches,
+    () => false,
+  );
+
+  useEffect(() => {
+    prdWidthRef.current = prdPanelWidth;
+  }, [prdPanelWidth]);
+
+  useEffect(() => {
+    codeWidthRef.current = codePanelWidth;
+  }, [codePanelWidth]);
 
   const {
     status,
@@ -113,6 +182,83 @@ export default function Home() {
     setDismissedErrorMessage(error);
   }, [error]);
 
+  useEffect(() => {
+    if (!panelDrag) {
+      return;
+    }
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    const onMove = (e: PointerEvent) => {
+      const row = mainRowRef.current;
+      if (!row) {
+        return;
+      }
+      const w = row.getBoundingClientRect().width;
+      if (panelDrag.kind === "prd") {
+        const next =
+          panelDrag.startPrd + (e.clientX - panelDrag.startX);
+        const maxPrd =
+          w -
+          MIN_CENTER_WIDTH -
+          codeWidthRef.current -
+          SPLITTER_GAP_PX;
+        setPrdPanelWidth(
+          Math.min(
+            Math.max(MIN_PRD_WIDTH, next),
+            Math.max(MIN_PRD_WIDTH, maxPrd),
+          ),
+        );
+      } else {
+        const next =
+          panelDrag.startCode - (e.clientX - panelDrag.startX);
+        const maxCode =
+          w -
+          MIN_CENTER_WIDTH -
+          prdWidthRef.current -
+          SPLITTER_GAP_PX;
+        setCodePanelWidth(
+          Math.min(
+            Math.max(MIN_CODE_WIDTH, next),
+            Math.max(MIN_CODE_WIDTH, maxCode),
+          ),
+        );
+      }
+    };
+    const onUp = () => setPanelDrag(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      document.body.style.userSelect = prevUserSelect;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [panelDrag]);
+
+  useEffect(() => {
+    if (!isDesktopLayout) {
+      return;
+    }
+    const onResize = () => {
+      const row = mainRowRef.current;
+      if (!row) {
+        return;
+      }
+      const w = row.getBoundingClientRect().width;
+      const { prd, code } = clampPanelWidths(
+        w,
+        prdWidthRef.current,
+        codeWidthRef.current,
+      );
+      setPrdPanelWidth(prd);
+      setCodePanelWidth(code);
+    };
+    window.addEventListener("resize", onResize);
+    queueMicrotask(onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isDesktopLayout]);
+
   const handleLoadFromHistory = useCallback(
     (text: string) => {
       setPrdText(text);
@@ -172,8 +318,16 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-        <div className="flex min-h-0 w-full shrink-0 flex-col border-gray-200 md:h-full md:w-80 md:border-r dark:border-gray-800">
+      <div
+        ref={mainRowRef}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row"
+      >
+        <div
+          className="flex min-h-0 w-full shrink-0 flex-col border-gray-200 md:h-full md:w-auto md:shrink-0 md:border-r-0 dark:border-gray-800"
+          style={
+            isDesktopLayout ? { width: prdPanelWidth, flexShrink: 0 } : undefined
+          }
+        >
           <div className="min-h-0 flex-1 overflow-hidden">
             <PrdEditor
               value={prdText}
@@ -191,7 +345,21 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="hidden min-h-0 flex-1 overflow-hidden md:flex">
+        <div className="hidden h-full shrink-0 md:block">
+          <PanelResizeHandle
+            ariaLabel="Resize PRD and preview panels"
+            onPointerDownClientX={(clientX) =>
+              setPanelDrag({
+                kind: "prd",
+                startX: clientX,
+                startPrd: prdPanelWidth,
+                startCode: codePanelWidth,
+              })
+            }
+          />
+        </div>
+
+        <div className="hidden min-h-0 min-w-0 flex-1 overflow-hidden md:flex">
           <ComponentPreview
             componentTree={componentTree}
             generatedCodes={generatedCodes}
@@ -200,7 +368,28 @@ export default function Home() {
           />
         </div>
 
-        <div className="hidden h-full w-96 shrink-0 overflow-hidden border-l border-gray-200 dark:border-gray-800 md:block">
+        <div className="hidden h-full shrink-0 md:block">
+          <PanelResizeHandle
+            ariaLabel="Resize preview and code export panels"
+            onPointerDownClientX={(clientX) =>
+              setPanelDrag({
+                kind: "code",
+                startX: clientX,
+                startPrd: prdPanelWidth,
+                startCode: codePanelWidth,
+              })
+            }
+          />
+        </div>
+
+        <div
+          className="hidden h-full shrink-0 overflow-hidden border-gray-200 md:block md:border-l-0 dark:border-gray-800"
+          style={
+            isDesktopLayout
+              ? { width: codePanelWidth, flexShrink: 0 }
+              : undefined
+          }
+        >
           <CodeExport
             componentTree={componentTree}
             generatedCodes={generatedCodes}
