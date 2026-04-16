@@ -1,8 +1,11 @@
 # SpecToUI
 
-Name:Gokul Das M
-Track:Frontend Dev
-Lab Name:Capstone Sandbox — Full Agent Pipeline
+Name: Gokul Das M
+
+Track: Frontend Dev 
+
+Lab Name: Capstone Sandbox — Full Agent Pipeline
+
 
 > Turn any Product Requirements Document into a complete React component tree — instantly.
 
