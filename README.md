@@ -146,7 +146,7 @@ useGenerate Hook (SSE consumer)
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/GokulDas-07/SpecToUI-Agent.git
+git clone https://github.com/GokulDas-07/thinkpalm-agentai-GokulDasM-FullAgentPipeline.git
 cd spectoui
 ```
 
